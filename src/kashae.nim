@@ -3,7 +3,8 @@ export tables, hashes
 
 type 
   CacheOption* {.pure.} = enum
-    clearParam, clearFunc
+    clearParam ## Adds `clearCache = false` to the procedure parameter list
+    clearFunc ## Allows calling `clearCache()` inside the procedure
   CacheOptions* = object
     flags*: set[CacheOption]
     size*: int
@@ -81,21 +82,15 @@ macro cache*(options: static CacheOptions, body: untyped): untyped =
   ## Caches return value based off parameters, for quicker opertations.
   ## Due to reliance on a global variable it cannot be a `func`.
   ## All parameters need a `hash` procedure as the cache uses a table.
-  ## 
-  ## `options[0]` is a set of `CacheOptions`:
-  ## 
-  ## `clearParam` adds a boolean named `clearCache` to the procedure
-  ## definition to allow clearing the cache before running.
-  ## 
-  ## `clearFunc` adds a callable `clearCache()` inside the procedure
-  ##  you can call in your code to clear the cache during a run.
-  ## 
-  ## `options[1]` specifies the max size of the cache, when reached oldest elements will be removed.
   cacheImpl(options, body)
 
 macro cache*(cacheSize: static int, body: untyped): untyped =
   ## Variant that only accepts cache size
   cacheImpl(CacheOptions(size: cacheSize), body)
+
+macro cache*(flags: static[set[CacheOption]], body: untyped): untyped =
+  ## Variant that only accepts options
+  cacheImpl(CacheOptions(flags: flags), body)
 
 macro cache*(body: untyped): untyped =
   ## Varaint that uses a unlocked cache and does not require flags
