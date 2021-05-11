@@ -67,7 +67,7 @@ proc cacheImpl(options: CacheOptions, body: NimNode): NimNode =
 
   result = body
   if clearParam in options.flags:
-    body[3].add newIdentDefs(clearCache, newEmptyNode(), newLit(false))
+    result[3].add newIdentDefs(clearCache, newEmptyNode(), newLit(false))
     newBody.insert 1, quote do:
       if `clearCache`:
         `cacheName`.clear
@@ -75,7 +75,6 @@ proc cacheImpl(options: CacheOptions, body: NimNode): NimNode =
     let clearCacheLambda = ident"clearCache"
     newBody.insert 2, quote do:
       let `clearCacheLambda` {.used.} = proc = `cacheName`.clear
-
   result[^1] = newBody
 
 macro cache*(options: static CacheOptions, body: untyped): untyped =
@@ -92,14 +91,14 @@ macro cache*(flags: static[set[CacheOption]], body: untyped): untyped =
   ## Variant that only accepts options
   cacheImpl(CacheOptions(flags: flags), body)
 
-macro cache*(body: untyped): untyped =
-  ## Varaint that uses a unlocked cache and does not require flags
-  cacheImpl(CacheOptions(), body)
+
+const NoOptions* = CacheOptions() 
 
 
 when isMainModule:
   import benchy
   import std/strformat
+
   proc fib(n: int): int =
     if n <= 1:
       result = n
@@ -113,7 +112,7 @@ when isMainModule:
       result = fibCached(n - 1) + fibCached(n - 2)
 
   const fibNum = 45
-  
+
   timeit fmt"Un-kashaed Fib: {fibNum}", 1:
     keep fib(fibNum)
 

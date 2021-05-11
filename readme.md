@@ -5,7 +5,7 @@ Kashae is a small implementation of caching return values for speeding up repeti
 After installing `kashae`, simply annotate your procedure with `{.cache.}` to enable an unclearable  "unlimited" cache.
 For instance with recursive Fibonacci number calculator:
 ```nim
-proc fib(n: int): int {.cache.} =
+proc fib(n: int): int {.cache: NoOptions.} =
   if n <= 1:
     result = n
   else:
