@@ -77,47 +77,44 @@ proc cacheImpl(options: CacheOptions, body: NimNode): NimNode =
       let `clearCacheLambda` {.used.} = proc = `cacheName`.clear
   result[^1] = newBody
 
-macro cache*(options: static CacheOptions, body: untyped): untyped =
+macro cacheOpt*(options: static CacheOptions, body: untyped): untyped =
   ## Caches return value based off parameters, for quicker opertations.
   ## Due to reliance on a global variable it cannot be a `func`.
   ## All parameters need a `hash` procedure as the cache uses a table.
   cacheImpl(options, body)
 
-macro cache*(cacheSize: static int, body: untyped): untyped =
+macro cacheOpt*(cacheSize: static int, body: untyped): untyped =
   ## Variant that only accepts cache size
   cacheImpl(CacheOptions(size: cacheSize), body)
 
-macro cache*(flags: static[set[CacheOption]], body: untyped): untyped =
+macro cacheOpt*(flags: static[set[CacheOption]], body: untyped): untyped =
   ## Variant that only accepts options
   cacheImpl(CacheOptions(flags: flags), body)
 
-
-const NoOptions* = CacheOptions() 
+macro cache*(body: untyped): untyped =
+  cacheImpl(CacheOptions(), body)
 
 
 when isMainModule:
-  import benchy
-  import std/strformat
-
-  proc fib(n: int): int =
+  import std/math
+  proc fib(n: int): int {.cache.} =
     if n <= 1:
       result = n
     else:
       result = fib(n - 1) + fib(n - 2)
+  
+  proc sqrt(a: float): float {.cacheOpt: 10.} =
+    math.sqrt(a)
 
-  proc fibCached(n: int): int {.cache: CacheOptions(flags: {clearParam}, size: 5).} =
-    if n <= 1:
-      result = n
-    else:
-      result = fibCached(n - 1) + fibCached(n - 2)
+  proc log10(a: float32): float32 {.cacheOpt:{clearParam}.} =
+    math.log10(a)
 
-  const fibNum = 45
+  proc `+%`(a, b: string): string {.cacheOpt: CacheOptions(size: 3, flags: {clearParam, clearFunc}).} =
+    a & b
 
-  timeit fmt"Un-kashaed Fib: {fibNum}", 1:
-    keep fib(fibNum)
+  echo fib(80)
+  echo sqrt(32.0)
+  echo log10(30f32)
+  echo "A" +% "b"
 
-  timeit fmt"Clearing Kashaed Fib: {fibNum}", 1:
-    keep fibCached(fibNum, true)
 
-  timeit fmt"Kashaed Fib: {fibNum}", 1:
-    keep fibCached(fibNum)

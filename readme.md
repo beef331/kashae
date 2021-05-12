@@ -5,28 +5,28 @@ Kashae is a small implementation of caching return values for speeding up repeti
 After installing `kashae`, simply annotate your procedure with `{.cache.}` to enable an unclearable  "unlimited" cache.
 For instance with recursive Fibonacci number calculator:
 ```nim
-proc fib(n: int): int {.cache: NoOptions.} =
+proc fib(n: int): int {.cache.} =
   if n <= 1:
     result = n
   else:
     result = fib(n - 1) + fib(n - 2)
 ```
-But shucks, what if we want to clear that pesky cache? One way is to do: 
+But shucks, what if we want to clear that pesky cache? Well this can be done using `cacheOpt:`. One way is to do: 
 ```nim
-proc fib(n: int): int {.cache:CacheOptions(flags: {clearParam}).}
+proc fib(n: int): int {.cacheOpt: CacheOptions(flags: {clearParam}).}
 # This is now expanded to 
 proc fib(n: int, clearCache = false): int 
 ```
 In the above example you can now do `fib(10, true)` and it'd run `foo`'s logic after clearing the cache, rebuilding it as it goes. 
 Secondly you can do:
 ```nim
-proc fib(n: int): int {.cache:CacheOptions(flags: {clearFunc}).}
+proc fib(n: int): int {.cacheOpt: CacheOptions(flags: {clearFunc}).}
 ```
 And now `clearCache()` can be called inside the function when you want to clear the cache based off some conditional like if the sun is in your eyes. If you start running out of ram and cannot find a reliable source to download it, you may want to consider limiting the cache size. Which can be done in the following ways:
 
 ```nim
-proc fib(n: int): int {.cache:CacheOptions(flags: {clearParam}, size: 10).} # Hey we want options
-proc fib(n: int): int {.cache:10.} # Freewill does not exist
+proc fib(n: int): int {.cacheOpt: CacheOptions(flags: {clearParam}, size: 10).} # Hey we want options
+proc fib(n: int): int {.cacheOpt: 10.} # Freewill does not exist
 ```
 Now you might be scratching your head thinking "but why?", two words, well one root word twice, speedy speed. Even with a cleared cache you can vastly outperform the equivalent without a cache due to calculations being in the table, my timing of the above `fib` without cache, clearing the cache, and with a built cache are as follows:
 ```
