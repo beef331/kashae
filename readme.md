@@ -13,14 +13,14 @@ proc fib(n: int): int {.cache.} =
 ```
 But shucks, what if we want to clear that pesky cache? Well this can be done using `cacheOpt:`. One way is to do: 
 ```nim
-proc fib(n: int): int {.cacheOpt: CacheOptions(flags: {clearParam}).}
+proc fib(n: int): int {.cacheOpt: {clearParam}.}
 # This is now expanded to 
 proc fib(n: int, clearCache = false): int 
 ```
 In the above example you can now do `fib(10, true)` and it'd run `foo`'s logic after clearing the cache, rebuilding it as it goes. 
 Secondly you can do:
 ```nim
-proc fib(n: int): int {.cacheOpt: CacheOptions(flags: {clearFunc}).}
+proc fib(n: int): int {.cacheOpt: {clearFunc}.}
 ```
 And now `clearCache()` can be called inside the function when you want to clear the cache based off some conditional like if the sun is in your eyes. If you start running out of ram and cannot find a reliable source to download it, you may want to consider limiting the cache size. Which can be done in the following ways:
 
