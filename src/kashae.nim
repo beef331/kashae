@@ -5,12 +5,12 @@ type
   CacheOption* {.pure.} = enum
     clearParam ## Adds `clearCache = false` to the procedure parameter list
     clearFunc ## Allows calling `clearCache()` inside the procedure
-
+    clearCacheAfterRun ## After running the function we clear the cache
   Cacheable*[K: Hash, V] = concept var c
     var a: Hash
     c.hasKey(a) is bool
     c[a] is V
-    c[a] = K
+    c[a] = V
     c.uncache()
     c.clear()
 
@@ -26,9 +26,11 @@ type
     mvar[int, int] = T
 
 proc generateHashBody(params: seq[NimNode]): NimNode =
+  ## Generates the block stmt that hashes the parameters
   result = newStmtList()
   let hashP = ident"hashParams"
-  result.add nnkVarSection.newTree newIdentDefs(hashP, ident"Hash", newLit(0))
+  result.add quote do:
+    var `hashP`: Hash = 0
   for param in params:
     result.add quote do:
       `hashP` = `hashP` !& `param`.hash
@@ -52,6 +54,7 @@ proc uncache*(a: var OrderedTable) =
 setCurrentCache OrderedTable[Hash, int]
 
 proc cacheProcImpl(options: CacheOptions, body: NimNode): NimNode =
+  ## Actual implementation of the cache macro
   let 
     cacheName = gensym(nskVar, "cache")
     retT = body[3][0]
@@ -66,7 +69,7 @@ proc cacheProcImpl(options: CacheOptions, body: NimNode): NimNode =
     var `cacheName` {.global.}: `cacheType`
 
   let 
-    params = block:
+    params = block: # Extract all parameter idents
       var res: seq[NimNode]
       for i in body[3][1..^1]:
         res.add i[0..^3]
@@ -77,17 +80,18 @@ proc cacheProcImpl(options: CacheOptions, body: NimNode): NimNode =
   lambda[0] = newEmptyNode()
   
   let elseBody = newStmtList()
-  elseBody.add newAssignment(ident"result", newCall(lambdaName, params))
-  elseBody.add quote do:
+  elseBody.add newAssignment(ident"result", newCall(lambdaName, params)) # result = lambdaName(params)
+  elseBody.add quote do: # Assign the value in the cache to result
     `cacheName`[`hashName`] = result
+
   let cacheSize = options.size
-  if cacheSize > 0:
+  if cacheSize > 0: # If we limit cache do that after each call
     elseBody.add quote do:
       if `cacheName`.len >= `cacheSize`:
         `cacheName`.uncache()
   
-  newBody.add newLetStmt(hashName, params.generateHashBody())
-  newBody.add quote do:
+  newBody.add newLetStmt(hashName, params.generateHashBody()) # let hashName = block: hashParams()
+  newBody.add quote do: # If we have the key get the value, otherwise run the procedure and do cache stuff
     if `cacheName`.hasKey(`hashName`):
       result = `cacheName`[`hashName`]
     else:
@@ -95,19 +99,26 @@ proc cacheProcImpl(options: CacheOptions, body: NimNode): NimNode =
       `elseBody`
 
   result = body.copyNimTree()
-  if clearParam in options.flags:
+
+  if clearParam in options.flags: # Adds the `clearCache = false` to the proc definition and logic to clear once full
     result[3].add newIdentDefs(clearCache, newEmptyNode(), newLit(false))
     newBody.insert 1, quote do:
       if `clearCache`:
         `cacheName`.clear
 
-  if clearFunc in options.flags:
+  if clearFunc in options.flags: # Adds a `clearCache` lambda internally for allowing clearing the cache through a function call
     let clearCacheLambda = ident"clearCache"
     newBody.insert 2, quote do:
       let `clearCacheLambda` {.used.} = proc = `cacheName`.clear
-  result[^1] = newBody
+  
+  if clearCacheAfterRun in options.flags: # Cmon you can read, clear after running
+    newBody.add quote do:
+      `cacheName`.clear
+
+  result[^1] = newBody # New body holds all the new logic we want
 
 proc cacheImpl(options: CacheOptions, body: NimNode): NimNode =
+  ## Used to support block style on multiple procedures
   if body.kind == nnkProcDef:
     result = cacheProcImpl(options, body)
   else:

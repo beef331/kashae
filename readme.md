@@ -44,7 +44,7 @@ If you want to use a different type for the cache you can! It just requires matc
     var a: Hash
     c.hasKey(a) is bool
     c[a] is V
-    c[a] = K
+    c[a] = V
     c.uncache()
     c.clear()
 
