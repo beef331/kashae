@@ -100,7 +100,7 @@ proc cacheProcImpl(options: CacheOptions, body: NimNode): NimNode =
 
   result = body.copyNimTree()
 
-  if clearParam in options.flags: # Adds the `clearCache = false` to the proc definition and logic to clear once full
+  if clearParam in options.flags: # Adds the `clearCache = false` to the proc definition and logic to clear if true
     result[3].add newIdentDefs(clearCache, newEmptyNode(), newLit(false))
     newBody.insert 1, quote do:
       if `clearCache`:
@@ -142,6 +142,7 @@ macro cacheOpt*(flags: static[set[CacheOption]], body: untyped): untyped =
   cacheImpl(CacheOptions(flags: flags), body)
 
 macro cache*(body: untyped): untyped =
+  ## Simple Cache method, no options whatsoever
   cacheImpl(CacheOptions(), body)
 
 when isMainModule:
