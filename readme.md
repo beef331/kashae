@@ -36,4 +36,24 @@ Clearing Kashaed Fib: 45 ........... 0.002 ms      0.003 ms    ±0.002    x10
 Kashaed Fib: 45 .................... 0.000 ms      0.000 ms    ±0.000    x10
 ```
 ## Implementation details
-Presently Kashae uses a Ordered Table removing the oldest value first, which is beneficial for operations like the `fib` example since you have many branches that call values below it.
+Presently Kashae by default uses a Ordered Table removing the oldest value first, which is beneficial for operations like the `fib` example since you have many branches that call values below it.
+
+If you want to use a different type for the cache you can! It just requires matching the following concept signature.
+```nim
+  Cacheable*[K: Hash, V] = concept var c
+    var a: Hash
+    c.hasKey(a) is bool
+    c[a] is V
+    c[a] = K
+    c.uncache()
+    c.clear()
+
+# If you prefer the Nim proc definitions:
+
+  proc hasKey*[K, V](col: YourCollection, v: V): bool
+  proc `[]`[K, V](col: YourCollection, k: K): V
+  proc `[]=`[K, V](col: var YourCollection, k: K, v: V)
+  proc uncache(col: var YourCollection)
+  proc clear(col: var YourCollection)
+```
+After implementing all of those you can simply do `setCurrentCache YourCollection[Hash, int]`, `int` can be replaced with any type you desire, but is needed to match the concept.

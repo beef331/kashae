@@ -5,10 +5,25 @@ type
   CacheOption* {.pure.} = enum
     clearParam ## Adds `clearCache = false` to the procedure parameter list
     clearFunc ## Allows calling `clearCache()` inside the procedure
-  CacheOptions* = object
+
+  Cacheable*[K: Hash, V] = concept var c
+    var a: Hash
+    c.hasKey(a) is bool
+    c[a] is V
+    c[a] = K
+    c.uncache()
+    c.clear()
+
+  CacheOptions = object
     flags*: set[CacheOption]
     size*: int
-
+  AnyMatrix*[R, C: static int; T] = concept m, var mvar, type M
+    M.ValueType is T
+    M.Rows == R
+    M.Cols == C
+    
+    m[int, int] is T
+    mvar[int, int] = T
 
 proc generateHashBody(params: seq[NimNode]): NimNode =
   result = newStmtList()
@@ -22,17 +37,34 @@ proc generateHashBody(params: seq[NimNode]): NimNode =
     `hashP`
   result = newBlockStmt(result)
 
+var cacheType {.compileTime.}: NimNode
+
+macro setCurrentCache*(a: Cacheable) =
+  ## Changes the backing type from the macro call onwards.
+  cacheType = a
+
+
+proc uncache*(a: var OrderedTable) =
+  for k in a.keys:
+    a.del(k)
+    break
+
+setCurrentCache OrderedTable[Hash, int]
+
+
 proc cacheImpl(options: CacheOptions, body: NimNode): NimNode =
   let 
     cacheName = gensym(nskVar, "cache")
     retT = body[3][0]
     clearCache = ident"clearCache"
+    cacheType = cacheType.copyNimTree
+  cacheType[^1] = retT
 
   assert retT.kind != nnkEmpty, "What do you want us to cache, farts?"
 
   var newBody = newStmtList()
   newBody.add quote do:
-    var `cacheName` {.global.}: OrderedTable[Hash,`retT`]
+    var `cacheName` {.global.}: `cacheType`
 
   let 
     params = block:
@@ -53,9 +85,7 @@ proc cacheImpl(options: CacheOptions, body: NimNode): NimNode =
   if cacheSize > 0:
     elseBody.add quote do:
       if `cacheName`.len >= `cacheSize`:
-        for k in `cacheName`.keys:
-          `cacheName`.del(k)
-          break
+        `cacheName`.uncache()
   
   newBody.add newLetStmt(hashName, params.generateHashBody())
   newBody.add quote do:
@@ -71,6 +101,7 @@ proc cacheImpl(options: CacheOptions, body: NimNode): NimNode =
     newBody.insert 1, quote do:
       if `clearCache`:
         `cacheName`.clear
+
   if clearFunc in options.flags:
     let clearCacheLambda = ident"clearCache"
     newBody.insert 2, quote do:
@@ -93,7 +124,6 @@ macro cacheOpt*(flags: static[set[CacheOption]], body: untyped): untyped =
 
 macro cache*(body: untyped): untyped =
   cacheImpl(CacheOptions(), body)
-
 
 when isMainModule:
   import std/math
