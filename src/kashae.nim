@@ -51,8 +51,7 @@ proc uncache*(a: var OrderedTable) =
 
 setCurrentCache OrderedTable[Hash, int]
 
-
-proc cacheImpl(options: CacheOptions, body: NimNode): NimNode =
+proc cacheProcImpl(options: CacheOptions, body: NimNode): NimNode =
   let 
     cacheName = gensym(nskVar, "cache")
     retT = body[3][0]
@@ -95,7 +94,7 @@ proc cacheImpl(options: CacheOptions, body: NimNode): NimNode =
       let `lambdaName` = `lambda`
       `elseBody`
 
-  result = body
+  result = body.copyNimTree()
   if clearParam in options.flags:
     result[3].add newIdentDefs(clearCache, newEmptyNode(), newLit(false))
     newBody.insert 1, quote do:
@@ -107,6 +106,15 @@ proc cacheImpl(options: CacheOptions, body: NimNode): NimNode =
     newBody.insert 2, quote do:
       let `clearCacheLambda` {.used.} = proc = `cacheName`.clear
   result[^1] = newBody
+
+proc cacheImpl(options: CacheOptions, body: NimNode): NimNode =
+  if body.kind == nnkProcDef:
+    result = cacheProcImpl(options, body)
+  else:
+    result = body
+    for x in 0..<body.len:
+      if result[x].kind == nnkProcDef:
+        result[x] = cacheProcImpl(options, result[x])
 
 macro cacheOpt*(options: static CacheOptions, body: untyped): untyped =
   ## Caches return value based off parameters, for quicker opertations.
@@ -142,9 +150,15 @@ when isMainModule:
   proc `+%`(a, b: string): string {.cacheOpt: CacheOptions(size: 3, flags: {clearParam, clearFunc}).} =
     a & b
 
+  cacheOpt(10):
+    proc test(a, b: int): int = a + b
+    proc hmm(a, b: int): int = a * b + b
+
   echo fib(80)
   echo sqrt(32.0)
   echo log10(30f32)
   echo "A" +% "b"
+  echo test(10, 20)
+  echo hmm(30, 50)
 
 
