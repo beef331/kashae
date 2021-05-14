@@ -1,10 +1,10 @@
 import std/[macros, tables, hashes]
 export tables, hashes
 
-type 
+type
   CacheOption* {.pure.} = enum
-    clearParam ## Adds `clearCache = false` to the procedure parameter list
-    clearFunc ## Allows calling `clearCache()` inside the procedure
+    clearParam         ## Adds `clearCache = false` to the procedure parameter list
+    clearFunc          ## Allows calling `clearCache()` inside the procedure
     clearCacheAfterRun ## After running the function we clear the cache
   Cacheable*[K: Hash, V] = concept var c
     var a: Hash
@@ -21,7 +21,7 @@ type
     M.ValueType is T
     M.Rows == R
     M.Cols == C
-    
+
     m[int, int] is T
     mvar[int, int] = T
 
@@ -55,7 +55,7 @@ setCurrentCache OrderedTable[Hash, int]
 
 proc cacheProcImpl(options: CacheOptions, body: NimNode): NimNode =
   ## Actual implementation of the cache macro
-  let 
+  let
     cacheName = gensym(nskVar, "cache")
     retT = body[3][0]
     clearCache = ident"clearCache"
@@ -68,7 +68,7 @@ proc cacheProcImpl(options: CacheOptions, body: NimNode): NimNode =
   newBody.add quote do:
     var `cacheName` {.global.}: `cacheType`
 
-  let 
+  let
     params = block: # Extract all parameter idents
       var res: seq[NimNode]
       for i in body[3][1..^1]:
@@ -78,9 +78,10 @@ proc cacheProcImpl(options: CacheOptions, body: NimNode): NimNode =
     lambdaName = genSym(nskLet, "lambda")
     lambda = body.copyNimTree()
   lambda[0] = newEmptyNode()
-  
+
   let elseBody = newStmtList()
-  elseBody.add newAssignment(ident"result", newCall(lambdaName, params)) # result = lambdaName(params)
+  elseBody.add newAssignment(ident"result", newCall(lambdaName,
+      params)) # result = lambdaName(params)
   elseBody.add quote do: # Assign the value in the cache to result
     `cacheName`[`hashName`] = result
 
@@ -89,7 +90,7 @@ proc cacheProcImpl(options: CacheOptions, body: NimNode): NimNode =
     elseBody.add quote do:
       if `cacheName`.len >= `cacheSize`:
         `cacheName`.uncache()
-  
+
   newBody.add newLetStmt(hashName, params.generateHashBody()) # let hashName = block: hashParams()
   newBody.add quote do: # If we have the key get the value, otherwise run the procedure and do cache stuff
     if `cacheName`.hasKey(`hashName`):
@@ -110,10 +111,17 @@ proc cacheProcImpl(options: CacheOptions, body: NimNode): NimNode =
     let clearCacheLambda = ident"clearCache"
     newBody.insert 2, quote do:
       let `clearCacheLambda` {.used.} = proc = `cacheName`.clear
-  
+
   if clearCacheAfterRun in options.flags: # Cmon you can read, clear after running
+    let counterName = genSym(nskVar, "counter")
+    newBody.insert 0:
+      quote do:
+        var `counterName` {.global.} = 0
+        inc `counterName`
     newBody.add quote do:
-      `cacheName`.clear
+      dec `counterName`
+      if `counterName` == 0:
+        `cacheName`.clear
 
   result[^1] = newBody # New body holds all the new logic we want
 
@@ -152,19 +160,39 @@ when isMainModule:
       result = n
     else:
       result = fib(n - 1) + fib(n - 2)
-  
+
   proc sqrt(a: float): float {.cacheOpt: 10.} =
     math.sqrt(a)
 
-  proc log10(a: float32): float32 {.cacheOpt:{clearParam}.} =
+  proc log10(a: float32): float32 {.cacheOpt: {clearParam}.} =
     math.log10(a)
 
-  proc `+%`(a, b: string): string {.cacheOpt: CacheOptions(size: 3, flags: {clearParam, clearFunc}).} =
+  proc `+%`(a, b: string): string {.cacheOpt: CacheOptions(size: 3, flags: {
+      clearParam, clearFunc}).} =
     a & b
 
   cacheOpt(10):
     proc test(a, b: int): int = a + b
     proc hmm(a, b: int): int = a * b + b
+
+
+  import benchy
+  proc fibT(a: int): int {.cacheOpt: CacheOptions(flags: {clearCacheAfterRun}, size: 5).} =
+    if a <= 1:
+      result = a
+    else:
+      result = fibT(a - 1) + fibT(a - 2)
+
+  proc uncachedFib(a: int): int =
+    if a <= 1:
+      result = a
+    else:
+      result = uncachedFib(a - 1) + uncachedFib(a - 2)
+
+  timeIt "clearcache":
+    keep fibT(40)
+  timeIt "uncached", 1:
+    keep uncachedFib(40)
 
   echo fib(80)
   echo sqrt(32.0)
@@ -172,5 +200,3 @@ when isMainModule:
   echo "A" +% "b"
   echo test(10, 20)
   echo hmm(30, 50)
-
-
