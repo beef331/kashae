@@ -35,6 +35,17 @@ Un-kashaed Fib: 45 .............. 6970.467 ms   7014.019 ms   ±32.373    x10
 Clearing Kashaed Fib: 45 ........... 0.002 ms      0.003 ms    ±0.002    x10
 Kashaed Fib: 45 .................... 0.000 ms      0.000 ms    ±0.000    x10
 ```
+
+Now stop writing a wrapper for that procedure in another module! We have magic in the way of `cacheProc`. Simply do the following to cache a prewritten procedrure.
+```nim
+proc someProcedureSomewhereElse(a, b: int): int # The procedure you want to cache
+let cachedVersion = cacheProc(someProcedureSomewhereElse)
+discard cachedVersion(100, 200) # now we call this
+```
+If the procedure is one that calls itself only the first call is cached.
+Cache proc has three variants, one that takes an `int` to change the cache size, one that takes a `set[CacheOption]` and finally one that takes a `CacheOptions`.
+Those overloads work identically to the `cacheOpt` ones, but only `clearParam` and `clearCacheAfterRun` work.
+
 ## Implementation details
 Presently Kashae by default uses a Ordered Table removing the oldest value first, which is beneficial for operations like the `fib` example since you have many branches that call values below it.
 
