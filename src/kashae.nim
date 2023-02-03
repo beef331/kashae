@@ -1,5 +1,6 @@
-import std/[macros, tables, hashes]
+import std/[macros, tables, hashes, genasts]
 export tables, hashes
+import micros
 
 type
   CacheOption* {.pure.} = enum
@@ -7,8 +8,8 @@ type
     clearFunc          ## Allows calling `clearCache()` inside the procedure
     clearCacheAfterRun ## After running the function we clear the cache
 
-  Cacheable*[K: Hash, V] = concept var c
-    var a: Hash
+  Cacheable*[K, V] = concept var c
+    var a: K
     c.hasKey(a) is bool
     c[a] is V
     c[a] = V
@@ -26,26 +27,11 @@ type
     m[int, int] is T
     mvar[int, int] = T
 
-proc generateHashBody(params: seq[NimNode]): NimNode =
-  ## Generates the block stmt that hashes the parameters
-  result = newStmtList()
-  let hashP = ident"hashParams"
-  result.add quote do:
-    var `hashP`: Hash = 0
-  for param in params:
-    result.add quote do:
-      `hashP` = `hashP` !& `param`.hash
-  result.add quote do:
-    `hashP` = !$`hashP`
-    `hashP`
-  result = newBlockStmt(result)
-
 var cacheType {.compileTime.}: NimNode
 
 macro setCurrentCache*(a: Cacheable) =
   ## Changes the backing type from the macro call onwards.
   cacheType = a
-
 
 proc uncache*(a: var OrderedTable) =
   for k in a.keys:
@@ -62,27 +48,43 @@ proc getParams(body: NimNode): seq[NimNode] =
     if x.kind == nnkSym:
       x = ident $x
 
-proc getCacheType(retT: NimNode): NimNode =
+proc getCacheType(key, val: NimNode): NimNode =
   result = cacheType.copyNimTree
-  result[^1] = retT
+  result[^2] = key
+  result[^1] = val
+
+proc getKeyType(prc: RoutineNode): NimNode =
+  result = nnkTupleConstr.newTree()
+  for param in prc.params:
+    for _ in param.names:
+      result.add param.typ
+
+proc getParamTuple(prc: RoutineNode): NimNode =
+  result = nnkTupleConstr.newTree()
+  for param in prc.params:
+    for name in param.names:
+      result.add ident($NimNode(name))
 
 proc cacheOptImpl(options: CacheOptions, body: NimNode): NimNode =
   ## Actual implementation of the cache macro
   let
+    routine = routineNode(body)
     cacheName = gensym(nskVar, "cache")
-    retT = body[3][0]
+    retT = routine.returnType
     clearCache = ident"clearCache"
-    cacheType = getCacheType(body[3][0])
+    keyType = getKeyType(routine)
+    paramTuple = routine.getParamTuple()
+    cacheType = getCacheType(keyType, retT)
 
   assert retT.kind != nnkEmpty, "What do you want us to cache, farts?"
 
   var newBody = newStmtList()
-  newBody.add quote do:
-    var `cacheName` {.global.}: `cacheType`
+  newBody.add:
+    genast(cacheName, cacheType):
+      var cacheName {.global.}: cacheType
 
   let
     params = body.getParams
-    hashName = genSym(nskLet, "hash")
     lambdaName = genSym(nskLet, "lambda")
     lambda = body.copyNimTree()
   lambda[0] = newEmptyNode()
@@ -90,46 +92,51 @@ proc cacheOptImpl(options: CacheOptions, body: NimNode): NimNode =
   let elseBody = newStmtList()
   elseBody.add newAssignment(ident"result", newCall(lambdaName,
       params)) # result = lambdaName(params)
-  elseBody.add quote do: # Assign the value in the cache to result
-    `cacheName`[`hashName`] = result
+  elseBody.add:
+    genAst(cacheName, paramTuple, result = ident"result"): # Assign the value in the cache to result
+      cacheName[paramTuple] = result
 
   let cacheSize = options.size
   if cacheSize > 0: # If we limit cache do that after each call
-    elseBody.add quote do:
-      if `cacheName`.len >= `cacheSize`:
-        `cacheName`.uncache()
+    elseBody.add:
+      genAst(cacheName, cacheSize):
+        if cacheName.len >= cacheSize:
+          cacheName.uncache()
 
-  newBody.add newLetStmt(hashName, params.generateHashBody()) # let hashName = block: hashParams()
-  newBody.add quote do: # If we have the key get the value, otherwise run the procedure and do cache stuff
-    if `cacheName`.hasKey(`hashName`):
-      result = `cacheName`[`hashName`]
-    else:
-      let `lambdaName` = `lambda`
-      `elseBody`
+  newBody.add:
+    genast(cacheName, paramTuple, lambdaName, lambda, elseBody, result = ident"result"): # If we have the key get the value, otherwise run the procedure and do cache stuff
+      if cacheName.hasKey(paramTuple):
+        result = cacheName[paramTuple]
+      else:
+        let lambdaName = lambda
+        elseBody
 
   result = body.copyNimTree()
 
   if clearParam in options.flags: # Adds the `clearCache = false` to the proc definition and logic to clear if true
     result[3].add newIdentDefs(clearCache, newEmptyNode(), newLit(false))
-    newBody.insert 1, quote do:
-      if `clearCache`:
-        `cacheName`.clear
+    newBody.insert 1:
+      genast(clearCache, cacheName):
+        if clearCache:
+          cacheName.clear()
 
   if clearFunc in options.flags: # Adds a `clearCache` lambda internally for allowing clearing the cache through a function call
     let clearCacheLambda = ident"clearCache"
-    newBody.insert 2, quote do:
-      let `clearCacheLambda` {.used.} = proc = `cacheName`.clear
+    newBody.insert 2:
+      genast(clearCacheLambda, cacheName):
+        let clearCacheLambda {.used.} = proc() = cacheName.clear
 
   if clearCacheAfterRun in options.flags: # Cmon you can read, clear after running
     let counterName = genSym(nskVar, "counter")
     newBody.insert 0:
-      quote do:
-        var `counterName` {.global.} = 0
-        inc `counterName`
-    newBody.add quote do:
-      dec `counterName`
-      if `counterName` == 0:
-        `cacheName`.clear
+      genast(counterName):
+        var counterName {.global.} = 0
+        inc counterName
+    newBody.add:
+      genAst(counterName, cacheName):
+        dec counterName
+        if counterName == 0:
+          cacheName.clear()
 
   result[^1] = newBody # New body holds all the new logic we want
 
@@ -142,31 +149,34 @@ proc replaceSym(body, sym: NimNode) =
 
 proc cacheProcImpl(opts: CacheOptions, body: NimNode): NimNode =
   let 
+    routine = routineNode(body)
     cacheName = gensym(nskVar, "cache")
-    hashName = gensym(nskLet, "hash")
-    params = getParams(body)
-    hashGen = generateHashBody(params)
-    cacheType = getCacheType(body[3][0])
-    procCall = newCall(body[0], params)
+    cacheType = getCacheType(routine.getKeyType(), routine.returnType)
+    paramTuple = routine.getParamTuple()
+    procCall = newCall(body[0])
+
+  for identDef in routine.params:
+    for name in identDef.names:
+      procCall.add ident($NimNode name)
+
   result = body.copyNimTree()
   result[0] = newEmptyNode()
-  let elseBody = quote do:
-    result = `procCall`
-    `cacheName`[`hashName`] = result
+  let elseBody = genAst(procCall, paramTuple, result = ident"result"):
+    result = procCall
+    cacheName[paramTuple] = result
   let cacheSize = opts.size
   if cacheSize > 0:
     elseBody.add quote do:
       if `cacheName`.len >= `cacheSize`:
         `cacheName`.uncache
 
-  let newBody = quote do:
-    var `cacheName` {.global.} : `cacheType`
-    let `hashName` = `hashGen`
-    if `hashName` in `cacheName`:
-      result = `cacheName`[`hashName`]
+  let newBody = genAst(cacheName, cacheType, paramTuple, procCall, result = ident"result"):
+    var cacheName {.global.} : cacheType
+    if paramTuple in cacheName:
+      result = cacheName[paramTuple]
     else:
-      result = `procCall`
-      `cacheName`[`hashName`] = result
+      result = procCall
+      cacheName[paramTuple] = result
 
   for x in result[3]: # Desym the formal params
     for y in 0 ..< x.len - 2:
@@ -187,6 +197,7 @@ proc cacheProcImpl(opts: CacheOptions, body: NimNode): NimNode =
     newBody.add newCall(ident"clear", cacheName)
 
   result = newProc(newEmptyNode(), result[3][0..^1], newBody)
+
 
 proc cacheImpl(options: CacheOptions, body: NimNode): NimNode =
   ## Used to support block style on multiple procedures
@@ -270,7 +281,8 @@ when isMainModule:
     else:
       result = uncachedFib(a - 1) + uncachedFib(a - 2)
   
-  let 
+
+  let
     cacheFib = cacheProc(uncachedFib)
     fibAfterRun = cacheProc(uncachedFib, {clearCacheAfterRun}) # Useless but yea
     fibLimitSize = cacheProc(uncachedFib, 10) # Above
@@ -301,3 +313,4 @@ when isMainModule:
   echo "A" +% "b"
   echo test(10, 20)
   echo hmm(30, 50)
+
