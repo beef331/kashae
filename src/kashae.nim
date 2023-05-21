@@ -122,7 +122,7 @@ proc cacheOptImpl(options: CacheOptions, body: NimNode): NimNode =
 
   if clearFunc in options.flags: # Adds a `clearCache` lambda internally for allowing clearing the cache through a function call
     let clearCacheLambda = ident"clearCache"
-    newBody.insert 2:
+    newBody.insert 1:
       genast(clearCacheLambda, cacheName):
         let clearCacheLambda {.used.} = proc() = cacheName.clear
 
