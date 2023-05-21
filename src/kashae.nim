@@ -113,6 +113,12 @@ proc cacheOptImpl(options: CacheOptions, body: NimNode): NimNode =
 
   result = body.copyNimTree()
 
+  let lambdaPos =
+    if clearParam in options.flags:
+      2
+    else:
+      1
+
   if clearParam in options.flags: # Adds the `clearCache = false` to the proc definition and logic to clear if true
     result[3].add newIdentDefs(clearCache, newEmptyNode(), newLit(false))
     newBody.insert 1:
@@ -122,7 +128,7 @@ proc cacheOptImpl(options: CacheOptions, body: NimNode): NimNode =
 
   if clearFunc in options.flags: # Adds a `clearCache` lambda internally for allowing clearing the cache through a function call
     let clearCacheLambda = ident"clearCache"
-    newBody.insert 2:
+    newBody.insert lambdaPos:
       genast(clearCacheLambda, cacheName):
         let clearCacheLambda {.used.} = proc() = cacheName.clear
 
@@ -262,6 +268,10 @@ when isMainModule:
 
   proc `+%`(a, b: string): string {.cacheOpt: CacheOptions(size: 3, flags: {
       clearParam, clearFunc}).} =
+    a & b
+
+  proc `++%`(a, b: string): string {.cacheOpt: CacheOptions(size: 3, flags: {clearFunc}).} =
+    clearCache()
     a & b
 
   cacheOpt(10):
