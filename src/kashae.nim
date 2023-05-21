@@ -16,7 +16,7 @@ type
     c.uncache()
     c.clear()
 
-  CacheOptions = object
+  CacheOptions* = object
     flags*: set[CacheOption]
     size*: int
   AnyMatrix*[R, C: static int; T] = concept m, var mvar, type M
