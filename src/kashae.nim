@@ -7,7 +7,8 @@ type
     clearParam         ## Adds `clearCache = false` to the procedure parameter list
     clearFunc          ## Allows calling `clearCache()` inside the procedure
     clearCacheAfterRun ## After running the function we clear the cache
-    skipBool           ## Adds a `skipCache` bool inside the procedure for skipping the caching of the current result
+    skipParam          ## Adds `skipCaching = false` to the procedure parameter lsit
+    skipBool           ## Adds a `skipCaching` bool inside the procedure
 
   Cacheable*[K, V] = concept var c
     var a: K
@@ -94,9 +95,9 @@ proc cacheOptImpl(options: CacheOptions, body: NimNode): NimNode =
   elseBody.add newAssignment(ident"result", newCall(lambdaName,
       params)) # result = lambdaName(params)
   elseBody.add:
-    if skipBool in options.flags:
+    if ({skipParam, skipBool} * options.flags).len != 0:
       genAst(cacheName, paramTuple, result = ident"result"): # Assign the value in the cache to result
-        if not skipCache: cacheName[paramTuple] = result
+        if not skipCaching: cacheName[paramTuple] = result
     else:
       genAst(cacheName, paramTuple, result = ident"result"): # Assign the value in the cache to result
         cacheName[paramTuple] = result
@@ -120,7 +121,7 @@ proc cacheOptImpl(options: CacheOptions, body: NimNode): NimNode =
   result = body.copyNimTree()
 
   let lambdaPos =
-    if clearParam in options.flags:
+    if ({clearParam, skipParam} * options.flags).len != 0:
       2
     else:
       1
@@ -150,11 +151,19 @@ proc cacheOptImpl(options: CacheOptions, body: NimNode): NimNode =
         if counterName == 0:
           cacheName.clear()
 
-  if skipBool in options.flags: # Adds a `skipCache` bool internally that when true skips the caching of the current result
-    let skipCache = ident"skipCache"
+  if skipParam in options.flags: # Adds `skipCaching = false` to the proc definition and logic which skips caching the run's result if true
+    let skipCaching = ident"skipCaching"
+    result[3].add newIdentDefs(skipCaching, newEmptyNode(), newLit(false))
+
+  if skipBool in options.flags: # Adds a `skipCaching` bool internally that when true skips caching of the current run's result if true
+    let skipCaching = ident"skipCaching"
     newBody.insert lambdaPos:
-      genast(skipCache):
-        var skipCache = false
+      if skipParam in options.flags:
+        genast(skipCaching):
+          var skipCaching = skipCaching
+      else:
+        genast(skipCaching):
+          var skipCaching = false
 
   result[^1] = newBody # New body holds all the new logic we want
 
@@ -188,13 +197,23 @@ proc cacheProcImpl(opts: CacheOptions, body: NimNode): NimNode =
       if `cacheName`.len >= `cacheSize`:
         `cacheName`.uncache
 
-  let newBody = genAst(cacheName, cacheType, paramTuple, procCall, result = ident"result"):
-    var cacheName {.global.} : cacheType
-    if paramTuple in cacheName:
-      result = cacheName[paramTuple]
+  let newBody =
+    if skipParam notin opts.flags:
+      genAst(cacheName, cacheType, paramTuple, procCall, result = ident"result"):
+        var cacheName {.global.} : cacheType
+        if paramTuple in cacheName:
+          result = cacheName[paramTuple]
+        else:
+          result = procCall
+          cacheName[paramTuple] = result
     else:
-      result = procCall
-      cacheName[paramTuple] = result
+      genAst(cacheName, cacheType, paramTuple, procCall, result = ident"result"):
+        var cacheName {.global.} : cacheType
+        if paramTuple in cacheName:
+          result = cacheName[paramTuple]
+        else:
+          result = procCall
+          if not skipCaching: cacheName[paramTuple] = result
 
   for x in result[3]: # Desym the formal params
     for y in 0 ..< x.len - 2:
@@ -213,6 +232,10 @@ proc cacheProcImpl(opts: CacheOptions, body: NimNode): NimNode =
     # Not very useful since only calls to this proc gets cached, 
     # we dont rewrite the entire proc to call this one
     newBody.add newCall(ident"clear", cacheName)
+
+  if skipParam in opts.flags: # Adds `skipCaching = false` to the proc definition and logic which skips caching the run's result if true
+    let skipCaching = ident"skipCaching"
+    result[3].add newIdentDefs(skipCaching, newEmptyNode(), newLit(false))
 
   result = newProc(newEmptyNode(), result[3][0..^1], newBody)
 
@@ -303,11 +326,15 @@ when isMainModule:
     else:
       result = oddCachedFib(a - 1) + oddCachedFib(a - 2)
       if (result and 1) == 0:
-        skipCache = true
+        skipCaching = true
+
+  proc optionallyCache(a: int): int {.cacheOpt: CacheOptions(flags: {skipParam}).} =
+    echo a
+    a
 
   proc cacheThree(a: int): int {.cacheOpt: CacheOptions(flags: {skipBool}).} =
     if a != 3:
-      skipCache = true
+      skipCaching = true
     echo a
     a
 
@@ -323,6 +350,7 @@ when isMainModule:
     fibAfterRun = cacheProc(uncachedFib, {clearCacheAfterRun}) # Useless but yea
     fibLimitSize = cacheProc(uncachedFib, 10) # Above
     fibClearable = cacheProc(uncachedFib, {clearParam})
+    fibOptCacheable = cacheProc(uncachedFib, {skipParam})
 
   # Clearable test
   echo fibClearable(40)
@@ -347,6 +375,12 @@ when isMainModule:
   discard cacheThree(3)
   discard cacheThree(4)
   discard cacheThree(4)
+  discard optionallyCache(5, skipCaching = true)
+  discard optionallyCache(5)
+  discard optionallyCache(5)
+  echo fibOptCacheable(40, skipCaching = true)
+  echo fibOptCacheable(40)
+  echo fibOptCacheable(40)
   echo oddCachedFib(40)
   echo fib(80)
   echo sqrt(32.0)
