@@ -95,7 +95,7 @@ proc cacheOptImpl(options: CacheOptions, body: NimNode): NimNode =
   elseBody.add newAssignment(ident"result", newCall(lambdaName,
       params)) # result = lambdaName(params)
   elseBody.add:
-    if skipParam in options.flags or skipBool in options.flags:
+    if ({skipParam, skipBool} * options.flags).len != 0:
       genAst(cacheName, paramTuple, result = ident"result"): # Assign the value in the cache to result
         if not skipCaching: cacheName[paramTuple] = result
     else:
@@ -121,7 +121,7 @@ proc cacheOptImpl(options: CacheOptions, body: NimNode): NimNode =
   result = body.copyNimTree()
 
   let lambdaPos =
-    if clearParam in options.flags or skipParam in options.flags:
+    if ({clearParam, skipParam} * options.flags).len != 0:
       2
     else:
       1
