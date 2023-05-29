@@ -1,6 +1,6 @@
 # Package
 
-version       = "0.1.3"
+version       = "0.1.4"
 author        = "Jason"
 description   = "Procedure caching library, aimed to replicate other language procedure caching"
 license       = "MIT"
