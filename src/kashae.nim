@@ -151,7 +151,7 @@ proc cacheOptImpl(options: CacheOptions, body: NimNode): NimNode =
         if counterName == 0:
           cacheName.clear()
 
-  if skipParam in options.flags: # Adds `skipCaching = false` to the proc definition and logic to skip caching the run's result if true
+  if skipParam in options.flags: # Adds `skipCaching = false` to the proc definition and logic which skips caching the run's result if true
     let skipCaching = ident"skipCaching"
     result[3].add newIdentDefs(skipCaching, newEmptyNode(), newLit(false))
 
@@ -233,7 +233,7 @@ proc cacheProcImpl(opts: CacheOptions, body: NimNode): NimNode =
     # we dont rewrite the entire proc to call this one
     newBody.add newCall(ident"clear", cacheName)
 
-  if skipParam in opts.flags: # Adds `skipCaching = false` to the proc definition and logic to skip caching the run's result if true
+  if skipParam in opts.flags: # Adds `skipCaching = false` to the proc definition and logic which skips caching the run's result if true
     let skipCaching = ident"skipCaching"
     result[3].add newIdentDefs(skipCaching, newEmptyNode(), newLit(false))
 
