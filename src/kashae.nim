@@ -7,7 +7,7 @@ type
     clearParam         ## Adds `clearCache = false` to the procedure parameter list
     clearFunc          ## Allows calling `clearCache()` inside the procedure
     clearCacheAfterRun ## After running the function we clear the cache
-    skipBool           ## Adds a `skipCache` bool inside the procedure for skipping the caching of the current result
+    skipBool           ## Adds a `skipCaching` bool inside the procedure
 
   Cacheable*[K, V] = concept var c
     var a: K
@@ -96,7 +96,7 @@ proc cacheOptImpl(options: CacheOptions, body: NimNode): NimNode =
   elseBody.add:
     if skipBool in options.flags:
       genAst(cacheName, paramTuple, result = ident"result"): # Assign the value in the cache to result
-        if not skipCache: cacheName[paramTuple] = result
+        if not skipCaching: cacheName[paramTuple] = result
     else:
       genAst(cacheName, paramTuple, result = ident"result"): # Assign the value in the cache to result
         cacheName[paramTuple] = result
@@ -150,11 +150,11 @@ proc cacheOptImpl(options: CacheOptions, body: NimNode): NimNode =
         if counterName == 0:
           cacheName.clear()
 
-  if skipBool in options.flags: # Adds a `skipCache` bool internally that when true skips the caching of the current result
-    let skipCache = ident"skipCache"
+  if skipBool in options.flags: # Adds a `skipCaching` bool internally that when true skips caching of the current run's result
+    let skipCaching = ident"skipCaching"
     newBody.insert lambdaPos:
-      genast(skipCache):
-        var skipCache = false
+      genast(skipCaching):
+        var skipCaching = false
 
   result[^1] = newBody # New body holds all the new logic we want
 
@@ -303,11 +303,11 @@ when isMainModule:
     else:
       result = oddCachedFib(a - 1) + oddCachedFib(a - 2)
       if (result and 1) == 0:
-        skipCache = true
+        skipCaching = true
 
   proc cacheThree(a: int): int {.cacheOpt: CacheOptions(flags: {skipBool}).} =
     if a != 3:
-      skipCache = true
+      skipCaching = true
     echo a
     a
 
