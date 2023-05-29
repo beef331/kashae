@@ -7,6 +7,7 @@ type
     clearParam         ## Adds `clearCache = false` to the procedure parameter list
     clearFunc          ## Allows calling `clearCache()` inside the procedure
     clearCacheAfterRun ## After running the function we clear the cache
+    skipBool           ## Adds a `skipCache` bool inside the procedure for skipping the caching of the current result
 
   Cacheable*[K, V] = concept var c
     var a: K
@@ -93,8 +94,13 @@ proc cacheOptImpl(options: CacheOptions, body: NimNode): NimNode =
   elseBody.add newAssignment(ident"result", newCall(lambdaName,
       params)) # result = lambdaName(params)
   elseBody.add:
-    genAst(cacheName, paramTuple, result = ident"result"): # Assign the value in the cache to result
-      cacheName[paramTuple] = result
+    if skipBool in options.flags:
+      genAst(cacheName, paramTuple, result = ident"result"): # Assign the value in the cache to result
+        if not skipCache: cacheName[paramTuple] = result
+    else:
+      genAst(cacheName, paramTuple, result = ident"result"): # Assign the value in the cache to result
+        cacheName[paramTuple] = result
+
 
   let cacheSize = options.size
   if cacheSize > 0: # If we limit cache do that after each call
@@ -143,6 +149,12 @@ proc cacheOptImpl(options: CacheOptions, body: NimNode): NimNode =
         dec counterName
         if counterName == 0:
           cacheName.clear()
+
+  if skipBool in options.flags: # Adds a `skipCache` bool internally that when true skips the caching of the current result
+    let skipCache = ident"skipCache"
+    newBody.insert lambdaPos:
+      genast(skipCache):
+        var skipCache = false
 
   result[^1] = newBody # New body holds all the new logic we want
 
@@ -285,6 +297,20 @@ when isMainModule:
     else:
       result = fibT(a - 1) + fibT(a - 2)
 
+  proc oddCachedFib(a: int): int {.cacheOpt: CacheOptions(flags: {skipBool}).} =
+    if a <= 1:
+      result = a
+    else:
+      result = oddCachedFib(a - 1) + oddCachedFib(a - 2)
+      if (result and 1) == 0:
+        skipCache = true
+
+  proc cacheThree(a: int): int {.cacheOpt: CacheOptions(flags: {skipBool}).} =
+    if a != 3:
+      skipCache = true
+    echo a
+    a
+
   proc uncachedFib(a: int): int =
     if a <= 1:
       result = a
@@ -317,6 +343,11 @@ when isMainModule:
 
   # Assorted pragma tests
   echo fibT(40)
+  discard cacheThree(3)
+  discard cacheThree(3)
+  discard cacheThree(4)
+  discard cacheThree(4)
+  echo oddCachedFib(40)
   echo fib(80)
   echo sqrt(32.0)
   echo log10(30f32)
