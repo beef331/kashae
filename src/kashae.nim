@@ -7,6 +7,7 @@ type
     clearParam         ## Adds `clearCache = false` to the procedure parameter list
     clearFunc          ## Allows calling `clearCache()` inside the procedure
     clearCacheAfterRun ## After running the function we clear the cache
+    skipParam          ## Adds `skipCaching = false` to the procedure parameter lsit
     skipBool           ## Adds a `skipCaching` bool inside the procedure
 
   Cacheable*[K, V] = concept var c
@@ -94,7 +95,7 @@ proc cacheOptImpl(options: CacheOptions, body: NimNode): NimNode =
   elseBody.add newAssignment(ident"result", newCall(lambdaName,
       params)) # result = lambdaName(params)
   elseBody.add:
-    if skipBool in options.flags:
+    if skipParam in options.flags or skipBool in options.flags:
       genAst(cacheName, paramTuple, result = ident"result"): # Assign the value in the cache to result
         if not skipCaching: cacheName[paramTuple] = result
     else:
@@ -120,7 +121,7 @@ proc cacheOptImpl(options: CacheOptions, body: NimNode): NimNode =
   result = body.copyNimTree()
 
   let lambdaPos =
-    if clearParam in options.flags:
+    if clearParam in options.flags or skipParam in options.flags:
       2
     else:
       1
@@ -150,11 +151,19 @@ proc cacheOptImpl(options: CacheOptions, body: NimNode): NimNode =
         if counterName == 0:
           cacheName.clear()
 
-  if skipBool in options.flags: # Adds a `skipCaching` bool internally that when true skips caching of the current run's result
+  if skipParam in options.flags: # Adds the `clearCache = false` to the proc definition and logic to clear if true
+    let skipCaching = ident"skipCaching"
+    result[3].add newIdentDefs(skipCaching, newEmptyNode(), newLit(false))
+
+  if skipBool in options.flags: # Adds a `skipCaching` bool internally that when true skips caching of the current run
     let skipCaching = ident"skipCaching"
     newBody.insert lambdaPos:
-      genast(skipCaching):
-        var skipCaching = false
+      if skipParam in options.flags:
+        genast(skipCaching):
+          var skipCaching = skipCaching
+      else:
+        genast(skipCaching):
+          var skipCaching = false
 
   result[^1] = newBody # New body holds all the new logic we want
 
@@ -305,6 +314,10 @@ when isMainModule:
       if (result and 1) == 0:
         skipCaching = true
 
+  proc optionallyCache(a: int): int {.cacheOpt: CacheOptions(flags: {skipParam}).} =
+    echo a
+    a
+
   proc cacheThree(a: int): int {.cacheOpt: CacheOptions(flags: {skipBool}).} =
     if a != 3:
       skipCaching = true
@@ -347,6 +360,9 @@ when isMainModule:
   discard cacheThree(3)
   discard cacheThree(4)
   discard cacheThree(4)
+  discard optionallyCache(5, skipCaching = true)
+  discard optionallyCache(5)
+  discard optionallyCache(5)
   echo oddCachedFib(40)
   echo fib(80)
   echo sqrt(32.0)
