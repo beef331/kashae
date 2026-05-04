@@ -31,9 +31,14 @@ type
 
 var cacheType {.compileTime.}: NimNode
 
-macro setCurrentCache*(a: Cacheable) =
-  ## Changes the backing type from the macro call onwards.
-  cacheType = a
+when (NimMajor, NimMinor) >= (2, 2):
+  macro setCurrentCache*(a: untyped) =
+    ## Changes the backing type from the macro call onwards.
+    cacheType = a
+else:
+  macro setCurrentCache*(a: Cacheable) =
+    ## Changes the backing type from the macro call onwards.
+    cacheType = a
 
 proc uncache*(a: var OrderedTable) =
   for k in a.keys:
